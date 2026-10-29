@@ -1,0 +1,55 @@
+name: Compilar APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "project.zip"
+      - ".github/workflows/build.yml"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Descomprimir proyecto
+        run: unzip -q project.zip -d work
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.9"
+
+      - name: Preparar Android SDK
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-34" "build-tools;34.0.0"
+
+      - name: Compilar
+        working-directory: work
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: SMAnalyzer-apk
+          path: work/app/build/outputs/apk/debug/app-debug.apk
+
+      - name: Publicar APK en Releases (descarga directa)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete latest --yes --cleanup-tag -R "${{ github.repository }}" || true
+          gh release create latest work/app/build/outputs/apk/debug/app-debug.apk \
+            -R "${{ github.repository }}" \
+            --title "Build ${{ github.run_number }}" \
+            --notes "APK de depuración compilado en GitHub Actions." \
+            --prerelease
